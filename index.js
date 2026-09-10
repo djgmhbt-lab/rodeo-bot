@@ -32,6 +32,7 @@ const client = new Client({
 const GUILD_ID = process.env.GUILD_ID;
 const CLIENT_ID = process.env.CLIENT_ID;
 const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria configurada para os tickets
+const WELCOME_CHANNEL_ID = '1547427100602925087'; // Canal de Boas-Vindas
 const GIF_URL = 'https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512';
 
 client.once('ready', async () => {
@@ -74,6 +75,24 @@ client.once('ready', async () => {
         console.log('Comandos registrados com sucesso!');
     } catch (error) {
         console.error('Erro ao registrar comandos:', error);
+    }
+});
+
+// Evento de Boas-Vindas quando um membro entra no servidor
+client.on('guildMemberAdd', async member => {
+    try {
+        const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+        if (!channel) return;
+
+        const embedWelcome = new EmbedBuilder()
+            .setTitle('🤠 Novo Cidadão na Área - Mecânica Rodeo')
+            .setDescription(`Seja muito bem-vindo(a) ao QG da **Mecânica Rodeo** (localizada no Grajaú, ao lado do Prédio da OAB), ${member}!\n\nAcesse nosso canal de verificação para registrar seu nome e ID na cidade, e abra um atendimento caso precise de algo. Aproveite a estadia!`)
+            .setColor(0xE67E22)
+            .setImage(GIF_URL);
+
+        await channel.send({ content: `Fala ${member}, seja bem-vindo!`, embeds: [embedWelcome] });
+    } catch (error) {
+        console.error('Erro ao enviar mensagem de boas-vindas:', error);
     }
 });
 
@@ -171,13 +190,13 @@ client.on('interactionCreate', async interaction => {
         const nomeInput = new TextInputBuilder()
             .setCustomId('input_nome')
             .setLabel('Nome (RG / Personagem)')
-            .setPlaceholder('Ex: Gatusso Silva')
+            .setPlaceholder('Ex: Gatusso_Silva')
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
         const idInput = new TextInputBuilder()
             .setCustomId('input_id')
-            .setLabel('ID na Cidade')
+            .setLabel('ID na Cidade (Nacional RP)')
             .setPlaceholder('Ex: 1234')
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
@@ -249,11 +268,19 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 4. Recebimento dos dados do Modal de Verificação (Alteração de Apelido)
+    // 4. Recebimento e Validação dos dados do Modal de Verificação
     if (interaction.isModalSubmit() && interaction.customId === 'modal_verificacao') {
-        const nome = interaction.fields.getTextInputValue('input_nome');
-        const idCidade = interaction.fields.getTextInputValue('input_id');
+        const nome = interaction.fields.getTextInputValue('input_nome').trim();
+        const idCidade = interaction.fields.getTextInputValue('input_id').trim();
         const member = interaction.member;
+
+        // VALIDAÇÃO: Verifica se o nome contém o caractere "_"
+        if (!nome.includes('_')) {
+            return interaction.reply({ 
+                content: `❌ **Verificação negada!** O seu nome no formato RP deve conter obrigatoriamente o underline (\`_\`), seguindo o padrão da cidade (Ex: \`Gatusso_Silva\`). Tente novamente.`, 
+                ephemeral: true 
+            });
+        }
 
         const novoApelido = `${nome} | ${idCidade}`;
 
@@ -266,7 +293,7 @@ client.on('interactionCreate', async interaction => {
         } catch (error) {
             console.error('Erro ao alterar apelido:', error);
             await interaction.reply({ 
-                content: `⚠️ Seus dados foram salvos, mas não consegui alterar seu apelido automaticamente (provavelmente meu cargo está abaixo do seu na hierarquia do Discord).`, 
+                content: `⚠️ Seus dados foram salvos com o formato correto, mas não consegui alterar seu apelido automaticamente (provavelmente meu cargo está abaixo do seu na hierarquia do Discord).`, 
                 ephemeral: true 
             });
         }
