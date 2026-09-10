@@ -102,7 +102,8 @@ client.on('interactionCreate', async interaction => {
                 const embedVerif = new EmbedBuilder()
                     .setTitle('🔧 Mecânica Rodeo - Verificação')
                     .setDescription('Bem-vindo à Mecânica Rodeo!\n\nClique no botão abaixo para preencher seus dados (Nome e ID) e liberar o seu acesso e alteração automática de apelido no servidor.')
-                    .setColor(0xF1C40F);
+                    .setColor(0xF1C40F)
+                    .setImage(GIF_URL); // O GIF entra aqui dentro da box, logo abaixo do texto
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -113,17 +114,15 @@ client.on('interactionCreate', async interaction => {
                 );
 
                 await interaction.reply({ content: 'Painel de verificação enviado!', ephemeral: true });
-                // Envia o embed do painel com o botão
                 await interaction.channel.send({ embeds: [embedVerif], components: [row] });
-                // Envia o GIF logo abaixo da linha do painel como solicitado
-                await interaction.channel.send({ content: GIF_URL });
             } 
             
             else if (painelType === 'tickets') {
                 const embedTicket = new EmbedBuilder()
                     .setTitle('🛠️ Mecânica Rodeo - Central de Atendimento')
                     .setDescription('Bem-vindo ao sistema de atendimento da Mecânica Rodeo!\n\nSelecione uma das opções abaixo no menu suspenso para abrir o seu atendimento privado.')
-                    .setColor(0x3498DB);
+                    .setColor(0x3498DB)
+                    .setImage(GIF_URL); // O GIF entra aqui dentro da box, logo abaixo do texto
 
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('select_ticket')
@@ -158,10 +157,7 @@ client.on('interactionCreate', async interaction => {
                 const row = new ActionRowBuilder().addComponents(selectMenu);
 
                 await interaction.reply({ content: 'Painel de tickets enviado!', ephemeral: true });
-                // Envia o embed do painel com o menu
                 await interaction.channel.send({ embeds: [embedTicket], components: [row] });
-                // Envia o GIF logo abaixo da linha do painel como solicitado
-                await interaction.channel.send({ content: GIF_URL });
             }
         }
     }
