@@ -103,7 +103,7 @@ client.on('interactionCreate', async interaction => {
                     .setTitle('🔧 Mecânica Rodeo - Verificação')
                     .setDescription('Bem-vindo à Mecânica Rodeo!\n\nClique no botão abaixo para preencher seus dados (Nome e ID) e liberar o seu acesso e alteração automática de apelido no servidor.')
                     .setColor(0xF1C40F)
-                    .setImage(GIF_URL); // O GIF entra aqui dentro da box, logo abaixo do texto
+                    .setImage(GIF_URL);
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -122,7 +122,7 @@ client.on('interactionCreate', async interaction => {
                     .setTitle('🛠️ Mecânica Rodeo - Central de Atendimento')
                     .setDescription('Bem-vindo ao sistema de atendimento da Mecânica Rodeo!\n\nSelecione uma das opções abaixo no menu suspenso para abrir o seu atendimento privado.')
                     .setColor(0x3498DB)
-                    .setImage(GIF_URL); // O GIF entra aqui dentro da box, logo abaixo do texto
+                    .setImage(GIF_URL);
 
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('select_ticket')
@@ -171,7 +171,7 @@ client.on('interactionCreate', async interaction => {
         const nomeInput = new TextInputBuilder()
             .setCustomId('input_nome')
             .setLabel('Nome (RG / Personagem)')
-            .setPlaceholder('Ex: Augusto Canabarro')
+            .setPlaceholder('Ex: Gatusso Silva')
             .setStyle(TextInputStyle.Short)
             .setRequired(true);
 
