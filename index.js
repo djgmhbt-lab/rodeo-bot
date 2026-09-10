@@ -101,7 +101,8 @@ client.on('interactionCreate', async interaction => {
                 const embedVerif = new EmbedBuilder()
                     .setTitle('🔧 Mecânica Rodeo - Verificação')
                     .setDescription('Bem-vindo à Mecânica Rodeo!\n\nClique no botão abaixo para preencher seus dados (Nome e ID) e liberar o seu acesso e alteração automática de apelido no servidor.')
-                    .setColor(0xF1C40F);
+                    .setColor(0xF1C40F)
+                    .setImage('https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512');
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -119,7 +120,8 @@ client.on('interactionCreate', async interaction => {
                 const embedTicket = new EmbedBuilder()
                     .setTitle('🛠️ Mecânica Rodeo - Central de Atendimento')
                     .setDescription('Bem-vindo ao sistema de atendimento da Mecânica Rodeo!\n\nSelecione uma das opções abaixo no menu suspenso para abrir o seu atendimento privado.')
-                    .setColor(0x3498DB);
+                    .setColor(0x3498DB)
+                    .setImage('https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512');
 
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('select_ticket')
@@ -252,7 +254,6 @@ client.on('interactionCreate', async interaction => {
         const idCidade = interaction.fields.getTextInputValue('input_id');
         const member = interaction.member;
 
-        // Formata o apelido novo (Ex: "Augusto | 1234")
         const novoApelido = `${nome} | ${idCidade}`;
 
         try {
