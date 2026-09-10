@@ -1,218 +1,263 @@
-const { Client, GatewayIntentBits, Collection, REST, Routes, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
-const fs = require('node:fs');
-const path = require('node:path');
-require('dotenv').config();
+const { 
+    Client, 
+    GatewayIntentBits, 
+    REST, 
+    Routes, 
+    SlashCommandBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    EmbedBuilder, 
+    ChannelType, 
+    PermissionsBitField 
+} = require('discord.js');
+const { GoogleGenAI } = require('@google/genai');
 
-// Importação e inicialização do Google Generative AI
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Inicialização da IA do Google Gemini (usando a chave das variáveis de ambiente)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
-    ],
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences
+    ]
 });
 
-client.commands = new Collection();
-const commands = [];
-
-// ==================== MAPEAMENTO DE IDS DA MECÂNICA RODEO ====================
-const CATEGORIA_TICKETS_ID = '1547441588911738900'; // Categoria exata de tickets
-const CARGO_MEMBROS_ID = '1547427424852115459';     // Cargo de Membros com acesso aos tickets
-const CARGO_VERIFICADO_ID = '1547434977447125032';  // Cargo recebido após verificação
-const CANAL_BOAS_VINDAS_ID = '1547427100602925087'; // Canal de boas-vindas
-
-// Cargos da staff/atendimento da oficina
-const CARGOS_ATENDIMENTO = ['Gerente', 'Mecânico Chefe', 'Mecânico'];
-// =========================================================================
-
-// Carregando comandos da pasta commands
-const commandsDir = path.join(__dirname, 'commands');
-if (fs.existsSync(commandsDir)) {
-    const commandFiles = fs.readdirSync(commandsDir).filter(file => file.endsWith('.js'));
-    for (const file of commandFiles) {
-        const filePath = path.join(commandsDir, file);
-        const command = require(filePath);
-        if ('data' in command && 'execute' in command) {
-            client.commands.set(command.data.name, command);
-            commands.push(command.data.toJSON());
-        }
-    }
-}
+// Configuração dos IDs do Servidor e Cargos
+const GUILD_ID = process.env.GUILD_ID;
+const CLIENT_ID = process.env.CLIENT_ID;
+const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria configurada para os tickets
 
 client.once('ready', async () => {
-    console.log(`Mecânica Rodeo Bot online e logado como ${client.user.tag}`);
+    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando.`);
+
+    // Registro automático dos Comandos Slash
+    const commands = [
+        new SlashCommandBuilder()
+            .setName('texto')
+            .setDescription('Envia uma mensagem personalizada em um canal')
+            .addChannelOption(option => 
+                option.setName('canal')
+                    .setDescription('Canal onde a mensagem será enviada')
+                    .setRequired(true))
+            .addStringOption(option => 
+                option.setName('mensagem')
+                    .setDescription('O conteúdo da mensagem')
+                    .setRequired(true)),
+        
+        new SlashCommandBuilder()
+            .setName('setup')
+            .setDescription('Envia os painéis oficiais da Mecânica Rodeo')
+            .addStringOption(option =>
+                option.setName('painel')
+                    .setDescription('Escolha o painel')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'Verificação', value: 'verificacao' },
+                        { name: 'Tickets / Atendimento', value: 'tickets' }
+                    ))
+    ];
+
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
     try {
+        console.log('Atualizando comandos de barra (Slash Commands)...');
         await rest.put(
-            Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
             { body: commands },
         );
-        console.log('Comandos de barra (/) registrados com sucesso!');
+        console.log('Comandos registrados com sucesso!');
     } catch (error) {
-        console.error(error);
+        console.error('Erro ao registrar comandos:', error);
     }
 });
 
-// SISTEMA DE BOAS-VINDAS
-client.on('guildMemberAdd', async member => {
-    try {
-        const canal = member.guild.channels.cache.get(CANAL_BOAS_VINDAS_ID);
-        if (!canal) return;
+// Manipulação de Comandos e Interações (Botões e Menus)
+client.on('interactionCreate', async interaction => {
+    // 1. Tratamento de Comandos Slash
+    if (interaction.isChatInputCommand()) {
+        const { commandName } = interaction;
 
-        const embedWelcome = new EmbedBuilder()
-            .setTitle('🚗 Novo Cidadão na Área!')
-            .setDescription(`Olá ${member}, seja muito bem-vindo(a) à **Mecânica Rodeo**!\n\nEstamos localizados no **Grajaú, ao lado do Prédio da OAB**. Passe em nosso canal de verificação para liberar o seu acesso completo à cidade e à oficina!`)
-            .setColor('#ff9900')
-            .setTimestamp();
+        if (commandName === 'texto') {
+            const channel = interaction.options.getChannel('canal');
+            const messageContent = interaction.options.getString('mensagem');
 
-        await canal.send({ embeds: [embedWelcome] });
-    } catch (err) {
-        console.error('Erro no sistema de boas-vindas:', err);
+            try {
+                await channel.send(messageContent);
+                await interaction.reply({ content: `✅ Mensagem enviada com sucesso no canal ${channel}!`, ephemeral: true });
+            } catch (error) {
+                console.error(error);
+                await interaction.reply({ content: '❌ Ocorreu um erro ao tentar enviar a mensagem neste canal.', ephemeral: true });
+            }
+        } 
+        
+        else if (commandName === 'setup') {
+            const painelType = interaction.options.getString('painel');
+
+            if (painelType === 'verificacao') {
+                const embedVerif = new EmbedBuilder()
+                    .setTitle('🔧 Mecânica Rodeo - Verificação')
+                    .setDescription('Clique no botão abaixo para se verificar e liberar o acesso completo à oficina.')
+                    .setColor(0xF1C40F);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('btn_verificar')
+                        .setLabel('Verificar-se')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('✔️')
+                );
+
+                await interaction.reply({ content: 'Painel de verificação enviado!', ephemeral: true });
+                await interaction.channel.send({ embeds: [embedVerif], components: [row] });
+            } 
+            
+            else if (painelType === 'tickets') {
+                const embedTicket = new EmbedBuilder()
+                    .setTitle('🛠️ Mecânica Rodeo - Central de Atendimento')
+                    .setDescription('Precisa de um orçamento, marcar uma revisão ou falar com a diretoria? Clique em uma das opções abaixo para abrir o seu atendimento privado.')
+                    .setColor(0x3498DB);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('ticket_revisao')
+                        .setLabel('Marcar Revisão')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('🚗'),
+                    new ButtonBuilder()
+                        .setCustomId('ticket_orcamento')
+                        .setLabel('Solicitar Orçamento')
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji('💰'),
+                    new ButtonBuilder()
+                        .setCustomId('ticket_atendimento')
+                        .setLabel('Atendimento Geral')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('📞'),
+                    new ButtonBuilder()
+                        .setCustomId('ticket_contratos')
+                        .setLabel('Contratos')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('📄')
+                );
+
+                await interaction.reply({ content: 'Painel de tickets enviado!', ephemeral: true });
+                await interaction.channel.send({ embeds: [embedTicket], components: [row] });
+            }
+        }
+    }
+
+    // 2. Tratamento de Botões (Interações)
+    if (interaction.isButton()) {
+        // Ação do Botão de Verificação
+        if (interaction.customId === 'btn_verificar') {
+            await interaction.reply({ content: '✅ Você foi verificado com sucesso na Mecânica Rodeo!', ephemeral: true });
+        }
+
+        // Ações de Abertura de Ticket (Criando canal dentro da categoria específica)
+        if (interaction.customId.startsWith('ticket_')) {
+            const tipo = interaction.customId.replace('ticket_', '');
+            const guild = interaction.guild;
+            const member = interaction.member;
+
+            await interaction.deferReply({ ephemeral: true });
+
+            try {
+                // Cria o canal de ticket dentro da categoria configurada
+                const ticketChannel = await guild.channels.create({
+                    name: `ticket-${tipo}-${member.user.username}`,
+                    type: ChannelType.GuildText,
+                    parent: TICKET_CATEGORY_ID,
+                    permissionOverwrites: [
+                        {
+                            id: guild.id, // Oculto para @everyone
+                            deny: [PermissionsBitField.Flags.ViewChannel],
+                        },
+                        {
+                            id: member.id, // Visível para quem abriu o ticket
+                            allow: [
+                                PermissionsBitField.Flags.ViewChannel,
+                                PermissionsBitField.Flags.SendMessages,
+                                PermissionsBitField.Flags.ReadMessageHistory
+                            ],
+                        },
+                        {
+                            id: client.user.id, // Visível para o Bot
+                            allow: [
+                                PermissionsBitField.Flags.ViewChannel,
+                                PermissionsBitField.Flags.SendMessages,
+                                PermissionsBitField.Flags.ManageChannels
+                            ],
+                        }
+                    ]
+                });
+
+                const embedWelcome = new EmbedBuilder()
+                    .setTitle(`Atendimento: ${tipo.toUpperCase()}`)
+                    .setDescription(`Olá ${member}, bem-vindo ao seu atendimento na Mecânica Rodeo. A nossa equipe ou os membros autorizados já vão te atender por aqui!\n\nPara fechar este atendimento a qualquer momento, clique no botão abaixo.`)
+                    .setColor(0xE67E22);
+
+                const closeRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('close_ticket')
+                        .setLabel('Fechar Atendimento')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('🔒')
+                );
+
+                await ticketChannel.send({ content: `${member}`, embeds: [embedWelcome], components: [closeRow] });
+                await interaction.editReply({ content: `✅ Seu ticket foi aberto com sucesso em ${ticketChannel}!` });
+
+            } catch (error) {
+                console.error('Erro ao criar canal de ticket:', error);
+                await interaction.editReply({ content: '❌ Ocorreu um erro ao tentar criar o seu ticket. Verifique as permissões do bot.' });
+            }
+        }
+
+        // Botão para fechar o ticket
+        if (interaction.customId === 'close_ticket') {
+            await interaction.reply({ content: '🔒 Este canal será fechado em 5 segundos...' });
+            setTimeout(async () => {
+                try {
+                    await interaction.channel.delete();
+                } catch (e) {
+                    console.error('Erro ao deletar canal de ticket:', e);
+                }
+            }, 5000);
+        }
     }
 });
 
-// SISTEMA DE MENSAGENS E IA (EXCLUSIVO DENTRO DOS TICKETS)
+// Sistema de IA (Google Gemini) respondendo a menções
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // Verifica se a mensagem foi enviada dentro de um canal de ticket da categoria correta
-    if (message.channel.parentId !== CATEGORIA_TICKETS_ID) return;
-
-    await message.channel.sendTyping();
-
-    try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const prompt = `Você é o Assistente Virtual Oficial da "Mecânica Rodeo", uma oficina mecânica de Roleplay situada no Grajaú, ao lado do Prédio da OAB. 
-        Você está conversando com um cliente/membro dentro de um canal de atendimento (ticket).
-        Mantenha um tom profissional, prestativo, automotivo e amigável. Sempre reforce nossa localização se necessário.
-        
-        Mensagem do usuário: ${message.content}`;
-
-        const result = await model.generateContent(prompt);
-        await message.reply(result.response.text());
-    } catch (error) {
-        console.error("Erro na IA do ticket:", error);
-    }
-});
-
-// SISTEMA DE INTERAÇÕES (VERIFICAÇÃO, MODAIS, TICKETS)
-client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
-        if (!command) return;
+    // Se o bot for mencionado, ele usa o Gemini para responder com o contexto da oficina
+    if (message.mentions.has(client.user)) {
         try {
-            await command.execute(interaction);
+            await message.channel.sendTyping();
+            
+            const prompt = message.content.replace(`<@!${client.user.id}>`, '').replace(`<@${client.user.id}>`, '').trim();
+            
+            if (!prompt) {
+                return message.reply('Opa! Como posso ajudar na Mecânica Rodeo?');
+            }
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+                config: {
+                    systemInstruction: "Você é o assistente virtual da Mecânica Rodeo, uma oficina de roleplay localizada no Grajaú, ao lado do Prédio da OAB. Seja prestativo, profissional e ajude os clientes e membros da oficina com suas dúvidas."
+                }
+            });
+
+            await message.reply(response.text);
         } catch (error) {
-            console.error(error);
-            await interaction.reply({ content: 'Ocorreu um erro ao executar este comando!', ephemeral: true }).catch(() => {});
-        }
-    }
-    else if (interaction.isButton()) {
-        if (interaction.customId === 'fechar_ticket') {
-            await interaction.reply({ content: '🔒 **Atendimento encerrado!** O canal será apagado em 5 segundos...', ephemeral: false });
-            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-        }
-    }
-    else if (interaction.isStringSelectMenu()) {
-        const valor = interaction.values[0];
-        const guild = interaction.guild;
-        const member = interaction.member;
-
-        // A. Menu de Verificação -> Abre Modal
-        if (interaction.customId === 'verificar_tipo') {
-            const modal = new ModalBuilder()
-                .setCustomId(`modal_${valor}`)
-                .setTitle(valor === 'cliente' ? 'Cadastro de Cliente' : 'Cadastro de Funcionário');
-
-            const nomeInput = new TextInputBuilder()
-                .setCustomId('nome_input')
-                .setLabel('Nome (Ex: Nome_Sobrenome)')
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(nomeInput));
-            return await interaction.showModal(modal);
-        }
-
-        // B. Menu de Tickets -> Cria Canal Privado na Categoria Correta
-        if (interaction.customId === 'menu_tickets') {
-            try {
-                const nomesServicos = {
-                    revisao: 'revisao',
-                    orcamento: 'orcamento',
-                    atendimento: 'atendimento',
-                    contratos: 'contratos'
-                };
-                
-                const servicoNome = nomesServicos[valor] || 'atendimento';
-                const nomeCanal = `oficina-${servicoNome}-${member.user.username}`.toLowerCase().replace(/[^a-z0-9-_]/g, '');
-                
-                const permissionOverwrites = [
-                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-                    { id: CARGO_MEMBROS_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-                ];
-
-                CARGOS_ATENDIMENTO.forEach(cargoNome => {
-                    const cargoObj = guild.roles.cache.find(r => r.name === cargoNome);
-                    if (cargoObj) {
-                        permissionOverwrites.push({
-                            id: cargoObj.id,
-                            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
-                        });
-                    }
-                });
-
-                const novoCanal = await guild.channels.create({
-                    name: nomeCanal,
-                    type: ChannelType.GuildText,
-                    parent: CATEGORIA_TICKETS_ID,
-                    permissionOverwrites: permissionOverwrites
-                });
-
-                const embedTicket = new EmbedBuilder()
-                    .setTitle(`🔧 Atendimento Mecânica Rodeo - ${valor.toUpperCase()}`)
-                    .setColor('#ff9900')
-                    .addFields(
-                        { name: 'Cliente', value: `${member} (ID: ${member.id})`, inline: false },
-                        { name: 'Serviço Solicitado', value: valor.toUpperCase(), inline: true },
-                        { name: 'Status', value: 'Aguardando mecânico / IA', inline: true }
-                    )
-                    .setTimestamp();
-
-                const rowBotoes = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('fechar_ticket').setLabel('Encerrar Atendimento').setStyle(ButtonStyle.Danger)
-                );
-
-                await interaction.reply({ content: `✅ Canal de atendimento criado: ${novoCanal}`, ephemeral: true });
-                await novoCanal.send({ content: `Olá ${member}, nossa equipe ou assistente virtual já vai te atender na oficina **Mecânica Rodeo**, situada no **Grajaú, ao lado do Prédio da OAB**!`, embeds: [embedTicket], components: [rowBotoes] });
-
-            } catch (err) {
-                console.error(err);
-                await interaction.reply({ content: 'Erro ao criar o canal de atendimento.', ephemeral: true });
-            }
-        }
-    }
-    else if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'modal_cliente' || interaction.customId === 'modal_funcionario') {
-            const nome = interaction.fields.getTextInputValue('nome_input');
-            if (!nome.includes('_')) {
-                return interaction.reply({ content: '❌ Erro: O nome deve conter obrigatoriamente um "_" (Ex: Nome_Exemplo).', ephemeral: true });
-            }
-
-            try {
-                await interaction.member.roles.add(CARGO_VERIFICADO_ID);
-                await interaction.member.setNickname(nome);
-            } catch (e) {
-                console.error("Erro ao aplicar cargo ou apelido:", e);
-            }
-
-            return await interaction.reply({ content: `✅ Verificação concluída, **${nome}**! Cargo liberado com sucesso. Seja bem-vindo à Mecânica Rodeo!`, ephemeral: true });
+            console.error('Erro ao falar com o Gemini:', error);
+            await message.reply('Desculpe, tive um probleminha técnico ao processar sua resposta.');
         }
     }
 });
