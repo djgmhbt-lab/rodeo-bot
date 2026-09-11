@@ -22,13 +22,6 @@ const {
     AudioPlayerStatus 
 } = require('@discordjs/voice');
 const play = require('play-dl');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const aiModel = genAI.getGenerativeModel({ 
-    model: 'gemini-1.5-flash',
-    systemInstruction: "Você é o assistente virtual da Mecânica Rodeo, uma oficina de roleplay localizada no Grajaú, ao lado do Prédio da OAB. Seja prestativo, profissional e ajude os clientes e membros da oficina com suas dúvidas."
-});
 
 const client = new Client({
     intents: [
@@ -454,30 +447,6 @@ client.on('interactionCreate', async interaction => {
                 console.error('Erro ao deletar canal de ticket:', e);
             }
         }, 5000);
-    }
-});
-
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    if (message.mentions.has(client.user)) {
-        try {
-            await message.channel.sendTyping();
-            
-            const prompt = message.content.replace(`<@!${client.user.id}>`, '').replace(`<@${client.user.id}>`, '').trim();
-            
-            if (!prompt) {
-                return message.reply('Opa! Como posso ajudar na Mecânica Rodeo?');
-            }
-
-            const result = await aiModel.generateContent(prompt);
-            const response = await result.response;
-
-            await message.reply(response.text());
-        } catch (error) {
-            console.error('Erro ao falar com o Gemini:', error);
-            await message.reply('Desculpe, tive um probleminha técnico ao processar sua resposta.');
-        }
     }
 });
 
