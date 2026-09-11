@@ -110,26 +110,19 @@ client.once('ready', async () => {
         console.error('Erro ao registrar comandos:', error);
     }
 
-    // Aguarda 3 segundos para garantir o cache completo dos canais do servidor antes de conectar no voz
+    // Aguarda o cache carregar e conecta no canal 24h
     setTimeout(() => {
         connectToBaseVoiceChannel();
     }, 3000);
 });
 
-// Função para conectar o bot no canal de voz 24h base
 async function connectToBaseVoiceChannel() {
     try {
         const guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) {
-            console.error('Guilda não encontrada para conexão de voz!');
-            return;
-        }
+        if (!guild) return;
 
         const channel = await guild.channels.fetch(baseVoiceChannelId).catch(() => null);
-        if (!channel) {
-            console.error('Canal de voz 24h não encontrado com o ID fornecido!');
-            return;
-        }
+        if (!channel) return;
 
         currentConnection = joinVoiceChannel({
             channelId: channel.id,
@@ -144,7 +137,6 @@ async function connectToBaseVoiceChannel() {
     }
 }
 
-// Lógica de reprodução da fila de músicas
 audioPlayer.on(AudioPlayerStatus.Idle, async () => {
     if (musicQueue.length > 0) {
         const nextSong = musicQueue.shift();
@@ -168,7 +160,6 @@ async function playSong(songInfo) {
     }
 }
 
-// Evento de Boas-Vindas
 client.on('guildMemberAdd', async member => {
     try {
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
@@ -190,7 +181,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
-        // Trava de canal apenas para os comandos de música
         const musicCommands = ['play', 'skip', 'stop'];
         if (musicCommands.includes(commandName) && interaction.channelId !== MUSIC_COMMAND_CHANNEL_ID) {
             return interaction.reply({ 
@@ -278,7 +268,6 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // Comando Play
         else if (commandName === 'play') {
             const voiceChannel = interaction.member.voice.channel;
             if (!voiceChannel) {
@@ -316,7 +305,6 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // Comando Skip
         else if (commandName === 'skip') {
             if (musicQueue.length > 0) {
                 const nextSong = musicQueue.shift();
@@ -329,7 +317,6 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // Comando Stop
         else if (commandName === 'stop') {
             musicQueue = [];
             audioPlayer.stop();
@@ -338,7 +325,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Modal de Verificação
     if (interaction.isButton() && interaction.customId === 'btn_abrir_verificacao') {
         const modal = new ModalBuilder()
             .setCustomId('modal_verificacao')
@@ -366,7 +352,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // Menu Suspenso de Tickets
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_ticket') {
         const tipo = interaction.values[0];
         const guild = interaction.guild;
@@ -425,7 +410,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Recebimento do Modal de Verificação
     if (interaction.isModalSubmit() && interaction.customId === 'modal_verificacao') {
         const nome = interaction.fields.getTextInputValue('input_nome').trim();
         const idCidade = interaction.fields.getTextInputValue('input_id').trim();
@@ -457,7 +441,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Fechar Ticket
     if (interaction.isButton() && interaction.customId === 'close_ticket') {
         await interaction.reply({ content: '🔒 Este canal será fechado em 5 segundos...' });
         setTimeout(async () => {
@@ -470,7 +453,6 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Sistema de IA (Google Gemini) respondendo a menções
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
@@ -487,7 +469,7 @@ client.on('messageCreate', async message => {
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
-    end                config: {
+                config: {
                     systemInstruction: "Você é o assistente virtual da Mecânica Rodeo, uma oficina de roleplay localizada no Grajaú, ao lado do Prédio da OAB. Seja prestativo, profissional e ajude os clientes e membros da oficina com suas dúvidas."
                 }
             });
