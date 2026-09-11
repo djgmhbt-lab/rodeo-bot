@@ -110,18 +110,26 @@ client.once('ready', async () => {
         console.error('Erro ao registrar comandos:', error);
     }
 
-    // Conectar automaticamente no canal 24h assim que o bot iniciar
-    connectToBaseVoiceChannel();
+    // Aguarda 3 segundos para garantir o cache completo dos canais do servidor antes de conectar no voz
+    setTimeout(() => {
+        connectToBaseVoiceChannel();
+    }, 3000);
 });
 
 // Função para conectar o bot no canal de voz 24h base
 async function connectToBaseVoiceChannel() {
     try {
         const guild = client.guilds.cache.get(GUILD_ID);
-        if (!guild) return;
+        if (!guild) {
+            console.error('Guilda não encontrada para conexão de voz!');
+            return;
+        }
 
-        const channel = guild.channels.cache.get(baseVoiceChannelId);
-        if (!channel) return;
+        const channel = await guild.channels.fetch(baseVoiceChannelId).catch(() => null);
+        if (!channel) {
+            console.error('Canal de voz 24h não encontrado com o ID fornecido!');
+            return;
+        }
 
         currentConnection = joinVoiceChannel({
             channelId: channel.id,
@@ -182,7 +190,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
-        // TRAVA DE CANAL APENAS PARA MÚSICA: /play, /skip e /stop
+        // Trava de canal apenas para os comandos de música
         const musicCommands = ['play', 'skip', 'stop'];
         if (musicCommands.includes(commandName) && interaction.channelId !== MUSIC_COMMAND_CHANNEL_ID) {
             return interaction.reply({ 
@@ -270,7 +278,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // COMANDO PLAY
+        // Comando Play
         else if (commandName === 'play') {
             const voiceChannel = interaction.member.voice.channel;
             if (!voiceChannel) {
@@ -308,7 +316,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // COMANDO SKIP
+        // Comando Skip
         else if (commandName === 'skip') {
             if (musicQueue.length > 0) {
                 const nextSong = musicQueue.shift();
@@ -321,7 +329,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // COMANDO STOP
+        // Comando Stop
         else if (commandName === 'stop') {
             musicQueue = [];
             audioPlayer.stop();
@@ -479,7 +487,7 @@ client.on('messageCreate', async message => {
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
-                config: {
+    end                config: {
                     systemInstruction: "Você é o assistente virtual da Mecânica Rodeo, uma oficina de roleplay localizada no Grajaú, ao lado do Prédio da OAB. Seja prestativo, profissional e ajude os clientes e membros da oficina com suas dúvidas."
                 }
             });
