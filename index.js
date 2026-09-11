@@ -33,6 +33,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const CLIENT_ID = process.env.CLIENT_ID;
 const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria configurada para os tickets
 const WELCOME_CHANNEL_ID = '1547427100602925087'; // Canal de Boas-Vindas
+const ROLE_CIDADAO_ID = '1547434977447125032'; // ID do cargo de Cidadão
 const GIF_URL = 'https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512';
 
 client.once('ready', async () => {
@@ -285,15 +286,18 @@ client.on('interactionCreate', async interaction => {
         const novoApelido = `${nome} | ${idCidade}`;
 
         try {
+            // Altera o apelido e adiciona o cargo de Cidadão simultaneamente
             await member.setNickname(novoApelido);
+            await member.roles.add(ROLE_CIDADAO_ID);
+
             await interaction.reply({ 
-                content: `✅ Verificação concluída com sucesso! Seu apelido foi alterado para **${novoApelido}** e seu acesso foi liberado.`, 
+                content: `✅ Verificação concluída com sucesso! Seu apelido foi alterado para **${novoApelido}**, o cargo de Cidadão foi atribuído e seu acesso foi liberado.`, 
                 ephemeral: true 
             });
         } catch (error) {
-            console.error('Erro ao alterar apelido:', error);
+            console.error('Erro ao processar verificação (cargo/apelido):', error);
             await interaction.reply({ 
-                content: `⚠️ Seus dados foram salvos com o formato correto, mas não consegui alterar seu apelido automaticamente (provavelmente meu cargo está abaixo do seu na hierarquia do Discord).`, 
+                content: `⚠️ Seus dados passaram na validação, mas ocorreu um erro ao aplicar o cargo ou alterar o apelido. Verifique se o cargo do bot está posicionado acima do cargo de Cidadão na hierarquia do Discord.`, 
                 ephemeral: true 
             });
         }
