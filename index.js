@@ -15,6 +15,13 @@ const {
     ChannelType, 
     PermissionsBitField 
 } = require('discord.js');
+const { 
+    joinVoiceChannel, 
+    createAudioPlayer, 
+    createAudioResource, 
+    AudioPlayerStatus 
+} = require('@discordjs/voice');
+const play = require('play-dl');
 const { GoogleGenAI } = require('@google/genai');
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -25,19 +32,28 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
 const GUILD_ID = process.env.GUILD_ID;
 const CLIENT_ID = process.env.CLIENT_ID;
-const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria configurada para os tickets
+const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria de tickets
 const WELCOME_CHANNEL_ID = '1547427100602925087'; // Canal de Boas-Vindas
+const MUSIC_COMMAND_CHANNEL_ID = '1548001056762626271'; // Canal exclusivo para comandos de música
+const VOICE_24H_CHANNEL_ID = '1548003127846903828'; // Canal de voz fixo 24h
 const ROLE_CIDADAO_ID = '1547434977447125032'; // ID do cargo de Cidadão
 const GIF_URL = 'https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512';
 
+// Variáveis do sistema de música
+let musicQueue = [];
+let audioPlayer = createAudioPlayer();
+let currentConnection = null;
+let baseVoiceChannelId = VOICE_24H_CHANNEL_ID;
+
 client.once('ready', async () => {
-    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando.`);
+    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo.`);
 
     const commands = [
         new SlashCommandBuilder()
@@ -62,13 +78,29 @@ client.once('ready', async () => {
                     .addChoices(
                         { name: 'Verificação', value: 'verificacao' },
                         { name: 'Tickets / Atendimento', value: 'tickets' }
-                    ))
+                    )),
+
+        new SlashCommandBuilder()
+            .setName('play')
+            .setDescription('Toca uma música do YouTube')
+            .addStringOption(option =>
+                option.setName('termo')
+                    .setDescription('Nome ou link da música')
+                    .setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName('skip')
+            .setDescription('Pula para a próxima música da fila'),
+
+        new SlashCommandBuilder()
+            .setName('stop')
+            .setDescription('Para a música e retorna o bot para o canal 24h')
     ];
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
     try {
-        console.log('Atualizando comandos de barra (Slash Commands)...');
+        console.log('Atualizando comandos de barra...');
         await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
             { body: commands },
@@ -77,9 +109,58 @@ client.once('ready', async () => {
     } catch (error) {
         console.error('Erro ao registrar comandos:', error);
     }
+
+    // Conectar automaticamente no canal 24h assim que o bot iniciar
+    connectToBaseVoiceChannel();
 });
 
-// Evento de Boas-Vindas quando um membro entra no servidor
+// Função para conectar o bot no canal de voz 24h base
+async function connectToBaseVoiceChannel() {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (!guild) return;
+
+        const channel = guild.channels.cache.get(baseVoiceChannelId);
+        if (!channel) return;
+
+        currentConnection = joinVoiceChannel({
+            channelId: channel.id,
+            guildId: guild.id,
+            adapterCreator: guild.voiceAdapterCreator,
+        });
+
+        currentConnection.subscribe(audioPlayer);
+        console.log(`Bot conectado com sucesso ao canal de voz 24h: ${channel.name}`);
+    } catch (error) {
+        console.error('Erro ao conectar no canal de voz 24h:', error);
+    }
+}
+
+// Lógica de reprodução da fila de músicas
+audioPlayer.on(AudioPlayerStatus.Idle, async () => {
+    if (musicQueue.length > 0) {
+        const nextSong = musicQueue.shift();
+        playSong(nextSong);
+    } else {
+        setTimeout(() => {
+            if (musicQueue.length === 0) {
+                connectToBaseVoiceChannel();
+            }
+        }, 3000);
+    }
+});
+
+async function playSong(songInfo) {
+    try {
+        const stream = await play.stream(songInfo.url);
+        const resource = createAudioResource(stream.stream, { inputType: stream.type });
+        audioPlayer.play(resource);
+    } catch (error) {
+        console.error('Erro ao reproduzir áudio:', error);
+    }
+}
+
+// Evento de Boas-Vindas
 client.on('guildMemberAdd', async member => {
     try {
         const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
@@ -98,9 +179,17 @@ client.on('guildMemberAdd', async member => {
 });
 
 client.on('interactionCreate', async interaction => {
-    // 1. Tratamento de Comandos Slash
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
+
+        // TRAVA DE CANAL APENAS PARA MÚSICA: /play, /skip e /stop
+        const musicCommands = ['play', 'skip', 'stop'];
+        if (musicCommands.includes(commandName) && interaction.channelId !== MUSIC_COMMAND_CHANNEL_ID) {
+            return interaction.reply({ 
+                content: `❌ Os comandos de música só podem ser utilizados no canal dedicado (<#${MUSIC_COMMAND_CHANNEL_ID}>)!`, 
+                ephemeral: true 
+            });
+        }
 
         if (commandName === 'texto') {
             const channel = interaction.options.getChannel('canal');
@@ -180,9 +269,68 @@ client.on('interactionCreate', async interaction => {
                 await interaction.channel.send({ embeds: [embedTicket], components: [row] });
             }
         }
+
+        // COMANDO PLAY
+        else if (commandName === 'play') {
+            const voiceChannel = interaction.member.voice.channel;
+            if (!voiceChannel) {
+                return interaction.reply({ content: '❌ Você precisa estar em um canal de voz para pedir música!', ephemeral: true });
+            }
+
+            const termo = interaction.options.getString('termo');
+            await interaction.deferReply();
+
+            try {
+                let searchResults = await play.search(termo, { limit: 1 });
+                if (!searchResults || searchResults.length === 0) {
+                    return interaction.editReply('❌ Nenhuma música encontrada com esse termo.');
+                }
+
+                const song = searchResults[0];
+
+                currentConnection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: interaction.guild.id,
+                    adapterCreator: interaction.guild.voiceAdapterCreator,
+                });
+                currentConnection.subscribe(audioPlayer);
+
+                if (audioPlayer.state.status === AudioPlayerStatus.Playing) {
+                    musicQueue.push(song);
+                    await interaction.editReply(`🎵 **Adicionado à fila:** \`${song.title}\``);
+                } else {
+                    playSong(song);
+                    await interaction.editReply(`🎶 **Tocando agora:** \`${song.title}\``);
+                }
+            } catch (error) {
+                console.error('Erro no comando play:', error);
+                await interaction.editReply('❌ Ocorreu um erro ao tentar reproduzir a música.');
+            }
+        }
+
+        // COMANDO SKIP
+        else if (commandName === 'skip') {
+            if (musicQueue.length > 0) {
+                const nextSong = musicQueue.shift();
+                playSong(nextSong);
+                await interaction.reply({ content: '⏭️ Música pulada com sucesso!' });
+            } else {
+                audioPlayer.stop();
+                connectToBaseVoiceChannel();
+                await interaction.reply({ content: '⏹️ Fila vazia. O bot retornou ao canal 24h.' });
+            }
+        }
+
+        // COMANDO STOP
+        else if (commandName === 'stop') {
+            musicQueue = [];
+            audioPlayer.stop();
+            connectToBaseVoiceChannel();
+            await interaction.reply({ content: '🛑 Música parada e bot retornado ao canal 24h base!' });
+        }
     }
 
-    // 2. Abertura do Formulário (Modal) de Verificação por Botão
+    // Modal de Verificação
     if (interaction.isButton() && interaction.customId === 'btn_abrir_verificacao') {
         const modal = new ModalBuilder()
             .setCustomId('modal_verificacao')
@@ -210,7 +358,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // 3. Tratamento do Menu Suspenso de Tickets
+    // Menu Suspenso de Tickets
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_ticket') {
         const tipo = interaction.values[0];
         const guild = interaction.guild;
@@ -269,13 +417,12 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 4. Recebimento e Validação dos dados do Modal de Verificação
+    // Recebimento do Modal de Verificação
     if (interaction.isModalSubmit() && interaction.customId === 'modal_verificacao') {
         const nome = interaction.fields.getTextInputValue('input_nome').trim();
         const idCidade = interaction.fields.getTextInputValue('input_id').trim();
         const member = interaction.member;
 
-        // VALIDAÇÃO: Verifica se o nome contém o caractere "_"
         if (!nome.includes('_')) {
             return interaction.reply({ 
                 content: `❌ **Verificação negada!** O seu nome no formato RP deve conter obrigatoriamente o underline (\`_\`), seguindo o padrão da cidade (Ex: \`Gatusso_Silva\`). Tente novamente.`, 
@@ -286,7 +433,6 @@ client.on('interactionCreate', async interaction => {
         const novoApelido = `${nome} | ${idCidade}`;
 
         try {
-            // Altera o apelido e adiciona o cargo de Cidadão simultaneamente
             await member.setNickname(novoApelido);
             await member.roles.add(ROLE_CIDADAO_ID);
 
@@ -295,15 +441,15 @@ client.on('interactionCreate', async interaction => {
                 ephemeral: true 
             });
         } catch (error) {
-            console.error('Erro ao processar verificação (cargo/apelido):', error);
+            console.error('Erro ao processar verificação:', error);
             await interaction.reply({ 
-                content: `⚠️ Seus dados passaram na validação, mas ocorreu um erro ao aplicar o cargo ou alterar o apelido. Verifique se o cargo do bot está posicionado acima do cargo de Cidadão na hierarquia do Discord.`, 
+                content: `⚠️ Seus dados passaram na validação, mas ocorreu um erro ao aplicar o cargo ou alterar o apelido (Lembre-se que o bot não pode alterar o apelido do Dono do Servidor).`, 
                 ephemeral: true 
             });
         }
     }
 
-    // 5. Botão para fechar o ticket
+    // Fechar Ticket
     if (interaction.isButton() && interaction.customId === 'close_ticket') {
         await interaction.reply({ content: '🔒 Este canal será fechado em 5 segundos...' });
         setTimeout(async () => {
