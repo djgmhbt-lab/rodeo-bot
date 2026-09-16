@@ -49,12 +49,13 @@ let audioPlayer = createAudioPlayer();
 let currentConnection = null;
 let baseVoiceChannelId = VOICE_24H_CHANNEL_ID;
 
-// Armazenamento do Sistema de Ponto (Ativos e Histórico Semanal)
-const activePoints = new Map(); // userId -> timestamp de início
-const weeklyReports = [];       // Lista de registros da semana
+// Armazenamento do Sistema de Ponto 
+// Estrutura: userId -> { startTime, messageObject }
+const activePoints = new Map(); 
+const weeklyReports = [];
 
 client.once('ready', async () => {
-    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo e sistema de ponto.`);
+    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo e sistema de ponto ao vivo.`);
 
     const commands = [
         new SlashCommandBuilder()
@@ -112,38 +113,69 @@ client.once('ready', async () => {
         console.error('Erro ao registrar comandos:', error);
     }
 
-    // Aguarda o cache carregar e conecta no canal 24h
     setTimeout(() => {
         connectToBaseVoiceChannel();
     }, 3000);
 
-    // Inicializa o agendamento automático (Verifica a cada minuto)
+    // Loop executado a cada 5 segundos para atualizar os contadores de ponto abertos ao vivo no chat
+    setInterval(() => {
+        atualizarContadoresPonto();
+    }, 5000);
+
+    // Loop de rotinas automáticas (23:59 e Domingo 06:00)
     setInterval(() => {
         verificarRotinasAutomaticas();
     }, 60000);
 });
 
-// Funções de Tempo e Automações (23h59 e Domingo às 06h00)
+// Atualiza o tempo nas mensagens públicas de ponto abertas
+async function atualizarContadoresPonto() {
+    const agora = Date.now();
+    for (const [userId, data] of activePoints.entries()) {
+        try {
+            const duracaoMs = agora - data.startTime;
+            const segundosTotal = Math.floor(duracaoMs / 1000);
+            const horas = Math.floor(segundosTotal / 3600);
+            const minutos = Math.floor((segundosTotal % 3600) / 60);
+            const segundos = segundosTotal % 60;
+
+            const embedAtualizado = new EmbedBuilder()
+                .setTitle('🟢 PONTO ABERTO - EXPEDIENTE ATIVO')
+                .setDescription(`Funcionário: <@${userId}>\n\n⏱️ **Tempo em andamento:**\n\`${horas}h ${minutos}m ${segundos}s\``)
+                .setColor(0x2ECC71)
+                .setTimestamp();
+
+            await data.messageObject.edit({ embeds: [embedAtualizado] });
+        } catch (err) {
+            // Caso a mensagem tenha sido apagada manualmente
+        }
+    }
+}
+
 function verificarRotinasAutomaticas() {
     const agora = new Date();
     const hora = agora.getHours();
     const minuto = agora.getMinutes();
-    const diaSemana = agora.getDay(); // 0 = Domingo, 1 = Segunda, etc.
+    const diaSemana = agora.getDay();
 
-    // 1. Fechamento automático de pontos todos os dias às 23:59
     if (hora === 23 && minuto === 59) {
         if (activePoints.size > 0) {
             const tempoFechamento = Date.now();
-            for (const [userId, startTime] of activePoints.entries()) {
-                const duracaoMs = tempoFechamento - startTime;
-                weeklyReports.push({ userId, startTime, endTime: tempoFechamento, duracaoMs });
+            for (const [userId, data] of activePoints.entries()) {
+                const duracaoMs = tempoFechamento - data.startTime;
+                weeklyReports.push({ userId, startTime: data.startTime, endTime: tempoFechamento, duracaoMs });
+                try {
+                    data.messageObject.edit({ 
+                        content: `🔴 O ponto de <@${userId}> foi encerrado automaticamente pelo sistema às 23:59.`, 
+                        embeds: [] 
+                    });
+                } catch (e) {}
             }
             activePoints.clear();
             console.log('[SISTEMA DE PONTO] Todos os pontos abertos foram encerrados automaticamente às 23:59.');
         }
     }
 
-    // 2. Relatório automático todo Domingo às 06:00 da manhã
     if (diaSemana === 0 && hora === 6 && minuto === 0) {
         gerarRelatorioSemanalAutomatico();
     }
@@ -426,7 +458,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Interações do Sistema de Ponto (Botões)
+    // Interações do Sistema de Ponto Público com Contador Vivo
     if (interaction.isButton()) {
         const userId = interaction.user.id;
 
@@ -435,8 +467,21 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: '⚠️ Você já está com um ponto aberto! Feche-o antes de iniciar outro.', ephemeral: true });
             }
 
-            activePoints.set(userId, Date.now());
-            return interaction.reply({ content: '🟢 **Ponto iniciado com sucesso!** Bom expediente na Mecânica Rodeo.', ephemeral: true });
+            await interaction.deferReply({ ephemeral: true });
+
+            const startTime = Date.now();
+            const embedPontoAtivo = new EmbedBuilder()
+                .setTitle('🟢 PONTO ABERTO - EXPEDIENTE ATIVO')
+                .setDescription(`Funcionário: <@${userId}>\n\n⏱️ **Tempo em andamento:**\n\`0h 0m 0s\``)
+                .setColor(0x2ECC71)
+                .setTimestamp();
+
+            // Envia a mensagem visível para todos no canal onde o botão foi apertado
+            const pontoMsg = await interaction.channel.send({ embeds: [embedPontoAtivo] });
+
+            activePoints.set(userId, { startTime, messageObject: pontoMsg });
+
+            return interaction.editReply({ content: '🟢 **Ponto iniciado publicamente com sucesso!** O contador já está rodando no chat.' });
         }
 
         else if (interaction.customId === 'btn_fechar_ponto') {
@@ -444,11 +489,13 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: '❌ Você não possui nenhum ponto aberto no momento.', ephemeral: true });
             }
 
-            const startTime = activePoints.get(userId);
-            const endTime = Date.now();
-            const duracaoMs = endTime - startTime;
+            await interaction.deferReply({ ephemeral: true });
 
-            weeklyReports.push({ userId, startTime, endTime, duracaoMs });
+            const pontoData = activePoints.get(userId);
+            const endTime = Date.now();
+            const duracaoMs = endTime - pontoData.startTime;
+
+            weeklyReports.push({ userId, startTime: pontoData.startTime, endTime, duracaoMs });
             activePoints.delete(userId);
 
             const segundosTotal = Math.floor(duracaoMs / 1000);
@@ -456,10 +503,19 @@ client.on('interactionCreate', async interaction => {
             const minutos = Math.floor((segundosTotal % 3600) / 60);
             const segundos = segundosTotal % 60;
 
-            return interaction.reply({ 
-                content: `🔴 **Ponto fechado com sucesso!**\n⏱️ Tempo em expediente: **${horas} hora(s), ${minutos} minuto(s) e ${segundos} segundo(s)**.`, 
-                ephemeral: true 
-            });
+            const embedFechado = new EmbedBuilder()
+                .setTitle('🔴 PONTO FECHADO - EXPEDIENTE ENCERRADO')
+                .setDescription(`Funcionário: <@${userId}>\n\n⏱️ **Tempo total trabalhado:**\n\`${horas} hora(s), ${minutos} minuto(s) e ${segundos} segundo(s)\``)
+                .setColor(0xE74C3C)
+                .setTimestamp();
+
+            try {
+                await pontoData.messageObject.edit({ embeds: [embedFechado] });
+            } catch (e) {
+                // Se por acaso a mensagem tiver sido apagada
+            }
+
+            return interaction.editReply({ content: `🔴 **Ponto fechado com sucesso!** Total computado: **${horas}h ${minutos}m ${segsRestantes = segundos}s**.` });
         }
     }
 
