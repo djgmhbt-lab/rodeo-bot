@@ -49,8 +49,12 @@ let audioPlayer = createAudioPlayer();
 let currentConnection = null;
 let baseVoiceChannelId = VOICE_24H_CHANNEL_ID;
 
+// Armazenamento do Sistema de Ponto (Ativos e Histórico Semanal)
+const activePoints = new Map(); // userId -> timestamp de início
+const weeklyReports = [];       // Lista de registros da semana
+
 client.once('ready', async () => {
-    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo.`);
+    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo e sistema de ponto.`);
 
     const commands = [
         new SlashCommandBuilder()
@@ -74,7 +78,8 @@ client.once('ready', async () => {
                     .setRequired(true)
                     .addChoices(
                         { name: 'Verificação', value: 'verificacao' },
-                        { name: 'Tickets / Atendimento', value: 'tickets' }
+                        { name: 'Tickets / Atendimento', value: 'tickets' },
+                        { name: 'Painel de Ponto', value: 'ponto' }
                     )),
 
         new SlashCommandBuilder()
@@ -111,7 +116,86 @@ client.once('ready', async () => {
     setTimeout(() => {
         connectToBaseVoiceChannel();
     }, 3000);
+
+    // Inicializa o agendamento automático (Verifica a cada minuto)
+    setInterval(() => {
+        verificarRotinasAutomaticas();
+    }, 60000);
 });
+
+// Funções de Tempo e Automações (23h59 e Domingo às 06h00)
+function verificarRotinasAutomaticas() {
+    const agora = new Date();
+    const hora = agora.getHours();
+    const minuto = agora.getMinutes();
+    const diaSemana = agora.getDay(); // 0 = Domingo, 1 = Segunda, etc.
+
+    // 1. Fechamento automático de pontos todos os dias às 23:59
+    if (hora === 23 && minuto === 59) {
+        if (activePoints.size > 0) {
+            const tempoFechamento = Date.now();
+            for (const [userId, startTime] of activePoints.entries()) {
+                const duracaoMs = tempoFechamento - startTime;
+                weeklyReports.push({ userId, startTime, endTime: tempoFechamento, duracaoMs });
+            }
+            activePoints.clear();
+            console.log('[SISTEMA DE PONTO] Todos os pontos abertos foram encerrados automaticamente às 23:59.');
+        }
+    }
+
+    // 2. Relatório automático todo Domingo às 06:00 da manhã
+    if (diaSemana === 0 && hora === 6 && minuto === 0) {
+        gerarRelatorioSemanalAutomatico();
+    }
+}
+
+async function gerarRelatorioSemanalAutomatico() {
+    try {
+        const guild = client.guilds.cache.get(GUILD_ID);
+        if (!guild) return;
+
+        // Procura um canal adequado para enviar o relatório (ex: canal de comandos ou texto geral)
+        const channel = guild.channels.cache.get(MUSIC_COMMAND_CHANNEL_ID) || guild.systemChannel;
+        if (!channel) return;
+
+        if (weeklyReports.length === 0) {
+            await channel.send('📊 **Relatório Semanal de Pontos:** Nenhum ponto foi registrado nesta semana.');
+            return;
+        }
+
+        // Agrupa os tempos por usuário
+        const resumoUsuarios = {};
+        for (const registro of weeklyReports) {
+            if (!resumoUsuarios[registro.userId]) {
+                resumoUsuarios[registro.userId] = 0;
+            }
+            resumoUsuarios[registro.userId] += registro.duracaoMs;
+        }
+
+        let descricao = '📊 **Relatório Semanal de Horas Trabalhadas (Mecânica Rodeo)**\n\n';
+        for (const [userId, totalMs] of Object.entries(resumoUsuarios)) {
+            const segundos = Math.floor(totalMs / 1000);
+            const horas = Math.floor(segundos / 3600);
+            const minutos = Math.floor((segundos % 3600) / 60);
+            const segsRestantes = segundos % 60;
+
+            descricao += `• <@${userId}>: **${horas}h ${minutos}m ${segsRestantes}s** trabalhadas.\n`;
+        }
+
+        const embedRelatorio = new EmbedBuilder()
+            .setTitle('📈 Fechamento de Ponto Semanal')
+            .setDescription(descricao)
+            .setColor(0x2ECC71)
+            .setTimestamp();
+
+        await channel.send({ embeds: [embedRelatorio] });
+
+        // Limpa o relatório da semana após enviar
+        weeklyReports.length = 0;
+    } catch (error) {
+        console.error('Erro ao gerar relatório semanal automático:', error);
+    }
+}
 
 async function connectToBaseVoiceChannel() {
     try {
@@ -263,6 +347,30 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: 'Painel de tickets enviado!', ephemeral: true });
                 await interaction.channel.send({ embeds: [embedTicket], components: [row] });
             }
+
+            else if (painelType === 'ponto') {
+                const embedPonto = new EmbedBuilder()
+                    .setTitle('⏱️ Mecânica Rodeo - Controle de Ponto')
+                    .setDescription('Clique no botão abaixo para **Iniciar** o seu expediente ou **Fechar** o seu ponto e computar as suas horas trabalhadas.')
+                    .setColor(0x1ABC9C)
+                    .setImage(GIF_URL);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('btn_iniciar_ponto')
+                        .setLabel('Iniciar Ponto')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('🟢'),
+                    new ButtonBuilder()
+                        .setCustomId('btn_fechar_ponto')
+                        .setLabel('Fechar Ponto')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('🔴')
+                );
+
+                await interaction.reply({ content: 'Painel de ponto enviado!', ephemeral: true });
+                await interaction.channel.send({ embeds: [embedPonto], components: [row] });
+            }
         }
 
         else if (commandName === 'play') {
@@ -319,6 +427,45 @@ client.on('interactionCreate', async interaction => {
             audioPlayer.stop();
             connectToBaseVoiceChannel();
             await interaction.reply({ content: '🛑 Música parada e bot retornado ao canal 24h base!' });
+        }
+    }
+
+    // Interações do Sistema de Ponto (Botões)
+    if (interaction.isButton()) {
+        const userId = interaction.user.id;
+
+        if (interaction.customId === 'btn_iniciar_ponto') {
+            if (activePoints.has(userId)) {
+                return interaction.reply({ content: '⚠️ Você já está com um ponto aberto! Feche-o antes de iniciar outro.', ephemeral: true });
+            }
+
+            activePoints.set(userId, Date.now());
+            return interaction.reply({ content: '🟢 **Ponto iniciado com sucesso!** Bom expediente na Mecânica Rodeo.', ephemeral: true });
+        }
+
+        else if (interaction.customId === 'btn_fechar_ponto') {
+            if (!activePoints.has(userId)) {
+                return interaction.reply({ content: '❌ Você não possui nenhum ponto aberto no momento.', ephemeral: true });
+            }
+
+            const startTime = activePoints.get(userId);
+            const endTime = Date.now();
+            const duracaoMs = endTime - startTime;
+
+            // Salva no relatório semanal
+            weeklyReports.push({ userId, startTime, endTime, duracaoMs });
+            activePoints.delete(userId);
+
+            // Calcula horas, minutos e segundos
+            const segundosTotal = Math.floor(duracaoMs / 1000);
+            const horas = Math.floor(segundosTotal / 3600);
+            const minutos = Math.floor((segundosTotal % 3600) / 60);
+            const segundos = segundosTotal % 60;
+
+            return interaction.reply({ 
+                content: `🔴 **Ponto fechado com sucesso!**\n⏱️ Tempo em expediente: **${horas} hora(s), ${minutos} minuto(s) e ${segundos} segundo(s)**.`, 
+                ephemeral: true 
+            });
         }
     }
 
