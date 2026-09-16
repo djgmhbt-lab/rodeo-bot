@@ -1,9 +1,11 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 
+const GIF_URL = 'https://media.discordapp.net/attachments/1534238274074317030/1547627243826716813/Adobe_Express_-_e23176d43d4545d0ab83078d199f1245.gif?ex=6aa41bb0&is=6aa2ca30&hm=57d2f0c603bb718d1ada78e24b96dbb588e14ec6196b285a63580d4b76df241a&=&width=512&height=512';
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('setup')
-        .setDescription('Envia os painéis oficiais da Mecânica Rodeo (Verificação, Tickets ou Ponto).')
+        .setDescription('Envia os painéis oficiais da Mecânica Rodeo.')
         .addStringOption(option =>
             option.setName('painel')
                 .setDescription('Escolha qual painel deseja enviar')
@@ -11,7 +13,8 @@ module.exports = {
                 .addChoices(
                     { name: 'Verificação', value: 'verificacao' },
                     { name: 'Tickets / Atendimento', value: 'tickets' },
-                    { name: 'Controle de Ponto', value: 'ponto' }
+                    { name: 'Controle de Ponto', value: 'ponto' },
+                    { name: 'Currículo', value: 'curriculo' }
                 ))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
@@ -26,6 +29,7 @@ module.exports = {
                 .setTitle('🔧 Verificação - Mecânica Rodeo')
                 .setDescription('Seja bem-vindo(a) à **Mecânica Rodeo**, localizada no **Grajaú (ao lado do Prédio da OAB)**!\n\nSelecione abaixo o seu tipo de cadastro para realizar a verificação e liberar seu acesso ao servidor:')
                 .setColor('#ff9900')
+                .setImage(GIF_URL)
                 .setTimestamp();
 
             const rowVerif = new ActionRowBuilder().addComponents(
@@ -57,6 +61,7 @@ module.exports = {
                 .setTitle('🎫 Atendimento e Serviços - Mecânica Rodeo')
                 .setDescription('Precisa de algum serviço na nossa oficina no **Grajaú (ao lado do Prédio da OAB)**?\n\nSelecione abaixo a opção desejada para abrir o seu atendimento:')
                 .setColor('#0099ff')
+                .setImage(GIF_URL)
                 .setTimestamp();
 
             const rowTicket = new ActionRowBuilder().addComponents(
@@ -100,6 +105,7 @@ module.exports = {
                 .setTitle('⏱️ Mecânica Rodeo - Controle de Ponto')
                 .setDescription('Clique no botão abaixo para **Iniciar** o seu expediente ou **Fechar** o seu ponto e computar as suas horas trabalhadas na oficina.')
                 .setColor(0x1ABC9C)
+                .setImage(GIF_URL)
                 .setTimestamp();
 
             const rowPonto = new ActionRowBuilder().addComponents(
@@ -117,6 +123,26 @@ module.exports = {
 
             await interaction.channel.send({ embeds: [embedPonto], components: [rowPonto] });
             return await interaction.editReply({ content: '✅ Painel de Ponto enviado com sucesso!' });
+        }
+
+        if (tipo === 'curriculo') {
+            const embedCurriculo = new EmbedBuilder()
+                .setTitle('📋 Mecânica Rodeo - Envio de Currículo')
+                .setDescription('Deseja fazer parte da equipe da **Mecânica Rodeo**?\n\nClique no botão abaixo para preencher seu **Nick + ID** e relatar suas **Experiências Profissionais** na cidade. O seu currículo será enviado diretamente para nossa análise.')
+                .setColor(0x9B59B6)
+                .setImage(GIF_URL)
+                .setTimestamp();
+
+            const rowCurriculo = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_enviar_curriculo')
+                    .setLabel('Enviar Currículo')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('📝')
+            );
+
+            await interaction.channel.send({ embeds: [embedCurriculo], components: [rowCurriculo] });
+            return await interaction.editReply({ content: '✅ Painel de Currículo enviado com sucesso!' });
         }
     },
 };
