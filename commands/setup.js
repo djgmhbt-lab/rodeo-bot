@@ -1,21 +1,25 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('setup')
-        .setDescription('Envia os painéis oficiais da Mecânica Rodeo (Verificação ou Tickets).')
+        .setDescription('Envia os painéis oficiais da Mecânica Rodeo (Verificação, Tickets ou Ponto).')
         .addStringOption(option =>
             option.setName('painel')
                 .setDescription('Escolha qual painel deseja enviar')
                 .setRequired(true)
                 .addChoices(
                     { name: 'Verificação', value: 'verificacao' },
-                    { name: 'Tickets / Atendimento', value: 'tickets' }
+                    { name: 'Tickets / Atendimento', value: 'tickets' },
+                    { name: 'Controle de Ponto', value: 'ponto' }
                 ))
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
         const tipo = interaction.options.getString('painel');
+
+        // Responde a interação de forma privada primeiro para evitar "Unknown Interaction"
+        await interaction.reply({ content: '⏳ Gerando e enviando o painel...', ephemeral: true });
 
         if (tipo === 'verificacao') {
             const embedVerif = new EmbedBuilder()
@@ -45,7 +49,7 @@ module.exports = {
             );
 
             await interaction.channel.send({ embeds: [embedVerif], components: [rowVerif] });
-            return await interaction.reply({ content: '✅ Painel de Verificação enviado com sucesso!', ephemeral: true });
+            return await interaction.editReply({ content: '✅ Painel de Verificação enviado com sucesso!' });
         }
 
         if (tipo === 'tickets') {
@@ -88,7 +92,31 @@ module.exports = {
             );
 
             await interaction.channel.send({ embeds: [embedTicket], components: [rowTicket] });
-            return await interaction.reply({ content: '✅ Painel de Tickets enviado com sucesso!', ephemeral: true });
+            return await interaction.editReply({ content: '✅ Painel de Tickets enviado com sucesso!' });
+        }
+
+        if (tipo === 'ponto') {
+            const embedPonto = new EmbedBuilder()
+                .setTitle('⏱️ Mecânica Rodeo - Controle de Ponto')
+                .setDescription('Clique no botão abaixo para **Iniciar** o seu expediente ou **Fechar** o seu ponto e computar as suas horas trabalhadas na oficina.')
+                .setColor(0x1ABC9C)
+                .setTimestamp();
+
+            const rowPonto = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_iniciar_ponto')
+                    .setLabel('Iniciar Ponto')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🟢'),
+                new ButtonBuilder()
+                    .setCustomId('btn_fechar_ponto')
+                    .setLabel('Fechar Ponto')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🔴')
+            );
+
+            await interaction.channel.send({ embeds: [embedPonto], components: [rowPonto] });
+            return await interaction.editReply({ content: '✅ Painel de Ponto enviado com sucesso!' });
         }
     },
 };
