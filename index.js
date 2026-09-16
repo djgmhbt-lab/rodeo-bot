@@ -38,6 +38,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const CLIENT_ID = process.env.CLIENT_ID;
 const TICKET_CATEGORY_ID = '1547601598694297651'; // Categoria de tickets
 const WELCOME_CHANNEL_ID = '1547427100602925087'; // Canal de Boas-Vindas
+const CURRICULO_CHANNEL_ID = '1549585669876092988'; // Canal exclusivo para envio de currículos
 const MUSIC_COMMAND_CHANNEL_ID = '1548001056762626271'; // Canal exclusivo para comandos de música
 const VOICE_24H_CHANNEL_ID = '1548003127846903828'; // Canal de voz fixo 24h
 const ROLE_CIDADAO_ID = '1547434977447125032'; // ID do cargo de Cidadão
@@ -50,12 +51,11 @@ let currentConnection = null;
 let baseVoiceChannelId = VOICE_24H_CHANNEL_ID;
 
 // Armazenamento do Sistema de Ponto 
-// Estrutura: userId -> { startTime, messageObject }
 const activePoints = new Map(); 
 const weeklyReports = [];
 
 client.once('ready', async () => {
-    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo e sistema de ponto ao vivo.`);
+    console.log(`Bot online como ${client.user.tag}! Mecânica Rodeo operando com som automotivo, ponto e sistema de currículos.`);
 
     const commands = [
         new SlashCommandBuilder()
@@ -80,7 +80,8 @@ client.once('ready', async () => {
                     .addChoices(
                         { name: 'Verificação', value: 'verificacao' },
                         { name: 'Tickets / Atendimento', value: 'tickets' },
-                        { name: 'Painel de Ponto', value: 'ponto' }
+                        { name: 'Painel de Ponto', value: 'ponto' },
+                        { name: 'Painel de Currículo', value: 'curriculo' }
                     )),
 
         new SlashCommandBuilder()
@@ -117,7 +118,7 @@ client.once('ready', async () => {
         connectToBaseVoiceChannel();
     }, 3000);
 
-    // Loop executado a cada 5 segundos para atualizar os contadores de ponto abertos ao vivo no chat
+    // Loop executado a cada 5 segundos para atualizar os contadores de ponto abertos
     setInterval(() => {
         atualizarContadoresPonto();
     }, 5000);
@@ -128,7 +129,6 @@ client.once('ready', async () => {
     }, 60000);
 });
 
-// Atualiza o tempo nas mensagens públicas de ponto abertas
 async function atualizarContadoresPonto() {
     const agora = Date.now();
     for (const [userId, data] of activePoints.entries()) {
@@ -146,9 +146,7 @@ async function atualizarContadoresPonto() {
                 .setTimestamp();
 
             await data.messageObject.edit({ embeds: [embedAtualizado] });
-        } catch (err) {
-            // Caso a mensagem tenha sido apagada manualmente
-        }
+        } catch (err) {}
     }
 }
 
@@ -172,7 +170,6 @@ function verificarRotinasAutomaticas() {
                 } catch (e) {}
             }
             activePoints.clear();
-            console.log('[SISTEMA DE PONTO] Todos os pontos abertos foram encerrados automaticamente às 23:59.');
         }
     }
 
@@ -399,6 +396,25 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: 'Painel de ponto enviado!', ephemeral: true });
                 await interaction.channel.send({ embeds: [embedPonto], components: [row] });
             }
+
+            else if (painelType === 'curriculo') {
+                const embedCurriculo = new EmbedBuilder()
+                    .setTitle('📋 Mecânica Rodeo - Envio de Currículo')
+                    .setDescription('Deseja fazer parte da equipe da **Mecânica Rodeo**?\n\nClique no botão abaixo para preencher seu **Nick + ID** e relatar suas **Experiências Profissionais** na cidade. O seu currículo será enviado diretamente para nossa análise.')
+                    .setColor(0x9B59B6)
+                    .setImage(GIF_URL);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('btn_enviar_curriculo')
+                        .setLabel('Enviar Currículo')
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji('📝')
+                );
+
+                await interaction.reply({ content: 'Painel de currículo enviado!', ephemeral: true });
+                await interaction.channel.send({ embeds: [embedCurriculo], components: [row] });
+            }
         }
 
         else if (commandName === 'play') {
@@ -458,7 +474,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Interações do Sistema de Ponto Público com Contador Vivo
+    // Interações de Botões (Ponto e Currículo)
     if (interaction.isButton()) {
         const userId = interaction.user.id;
 
@@ -476,9 +492,7 @@ client.on('interactionCreate', async interaction => {
                 .setColor(0x2ECC71)
                 .setTimestamp();
 
-            // Envia a mensagem visível para todos no canal onde o botão foi apertado
             const pontoMsg = await interaction.channel.send({ embeds: [embedPontoAtivo] });
-
             activePoints.set(userId, { startTime, messageObject: pontoMsg });
 
             return interaction.editReply({ content: '🟢 **Ponto iniciado publicamente com sucesso!** O contador já está rodando no chat.' });
@@ -511,11 +525,36 @@ client.on('interactionCreate', async interaction => {
 
             try {
                 await pontoData.messageObject.edit({ embeds: [embedFechado] });
-            } catch (e) {
-                // Se por acaso a mensagem tiver sido apagada
-            }
+            } catch (e) {}
 
-            return interaction.editReply({ content: `🔴 **Ponto fechado com sucesso!** Total computado: **${horas}h ${minutos}m ${segsRestantes = segundos}s**.` });
+            return interaction.editReply({ content: `🔴 **Ponto fechado com sucesso!** Total computado: **${horas}h ${minutos}m ${segundos}s**.` });
+        }
+
+        else if (interaction.customId === 'btn_enviar_curriculo') {
+            const modal = new ModalBuilder()
+                .setCustomId('modal_curriculo')
+                .setTitle('Currículo - Mecânica Rodeo');
+
+            const nickInput = new TextInputBuilder()
+                .setCustomId('input_nick_id')
+                .setLabel('Nome (Nick) + ID')
+                .setPlaceholder('Ex: Gatusso_Silva 27149')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true);
+
+            const expInput = new TextInputBuilder()
+                .setCustomId('input_experiencia')
+                .setLabel('Experiências Profissionais na Cidade')
+                .setPlaceholder('Descreva suas passagens por outras mecânicas, ilegal, etc...')
+                .setStyle(TextInputStyle.Paragraph)
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(nickInput),
+                new ActionRowBuilder().addComponents(expInput)
+            );
+
+            return await interaction.showModal(modal);
         }
     }
 
@@ -604,34 +643,68 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === 'modal_verificacao') {
-        const nome = interaction.fields.getTextInputValue('input_nome').trim();
-        const idCidade = interaction.fields.getTextInputValue('input_id').trim();
-        const member = interaction.member;
+    // Processamento dos Modais (Verificação e Currículo)
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'modal_verificacao') {
+            const nome = interaction.fields.getTextInputValue('input_nome').trim();
+            const idCidade = interaction.fields.getTextInputValue('input_id').trim();
+            const member = interaction.member;
 
-        if (!nome.includes('_')) {
-            return interaction.reply({ 
-                content: `❌ **Verificação negada!** O seu nome no formato RP deve conter obrigatoriamente o underline (\`_\`), seguindo o padrão da cidade (Ex: \`Gatusso_Silva\`). Tente novamente.`, 
-                ephemeral: true 
-            });
+            if (!nome.includes('_')) {
+                return interaction.reply({ 
+                    content: `❌ **Verificação negada!** O seu nome no formato RP deve conter obrigatoriamente o underline (\`_\`), seguindo o padrão da cidade (Ex: \`Gatusso_Silva\`). Tente novamente.`, 
+                    ephemeral: true 
+                });
+            }
+
+            const novoApelido = `${nome} | ${idCidade}`;
+
+            try {
+                await member.setNickname(novoApelido);
+                await member.roles.add(ROLE_CIDADAO_ID);
+
+                await interaction.reply({ 
+                    content: `✅ Verificação concluída com sucesso! Seu apelido foi alterado para **${novoApelido}**, o cargo de Cidadão foi atribuído e seu acesso foi liberado.`, 
+                    ephemeral: true 
+                });
+            } catch (error) {
+                console.error('Erro ao processar verificação:', error);
+                await interaction.reply({ 
+                    content: `⚠️ Seus dados passaram na validação, mas ocorreu um erro ao aplicar o cargo ou alterar o apelido (Lembre-se que o bot não pode alterar o apelido do Dono do Servidor).`, 
+                    ephemeral: true 
+                });
+            }
         }
 
-        const novoApelido = `${nome} | ${idCidade}`;
+        else if (interaction.customId === 'modal_curriculo') {
+            const nickId = interaction.fields.getTextInputValue('input_nick_id').trim();
+            const experiencia = interaction.fields.getTextInputValue('input_experiencia').trim();
+            const member = interaction.member;
 
-        try {
-            await member.setNickname(novoApelido);
-            await member.roles.add(ROLE_CIDADAO_ID);
+            const curriculoChannel = member.guild.channels.cache.get(CURRICULO_CHANNEL_ID);
+            if (!curriculoChannel) {
+                return interaction.reply({ content: '❌ O canal de currículos configurado não foi encontrado pelo bot.', ephemeral: true });
+            }
 
-            await interaction.reply({ 
-                content: `✅ Verificação concluída com sucesso! Seu apelido foi alterado para **${novoApelido}**, o cargo de Cidadão foi atribuído e seu acesso foi liberado.`, 
-                ephemeral: true 
-            });
-        } catch (error) {
-            console.error('Erro ao processar verificação:', error);
-            await interaction.reply({ 
-                content: `⚠️ Seus dados passaram na validação, mas ocorreu um erro ao aplicar o cargo ou alterar o apelido (Lembre-se que o bot não pode alterar o apelido do Dono do Servidor).`, 
-                ephemeral: true 
-            });
+            const embedCurriculoEnviado = new EmbedBuilder()
+                .setTitle('📄 Novo Currículo Recebido - Mecânica Rodeo')
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setDescription(
+                    `👤 **Candidato:** ${member} (${member.user.tag})\n\n` +
+                    `🏷️ **Nome e ID:**\n\`${nickId}\`\n\n` +
+                    `💼 **Experiências Profissionais:**\n\`\`\`text\n${experiencia}\n\`\`\``
+                )
+                .setColor(0xF1C40F)
+                .setImage(GIF_URL)
+                .setTimestamp();
+
+            try {
+                await curriculoChannel.send({ embeds: [embedCurriculoEnviado] });
+                await interaction.reply({ content: '✅ **Currículo enviado com sucesso!** Ele já foi postado no canal de currículos para a nossa avaliação.', ephemeral: true });
+            } catch (error) {
+                console.error('Erro ao enviar currículo:', error);
+                await interaction.reply({ content: '❌ Ocorreu um erro ao tentar enviar o seu currículo. Tente novamente mais tarde.', ephemeral: true });
+            }
         }
     }
 
