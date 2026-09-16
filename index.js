@@ -154,7 +154,6 @@ async function gerarRelatorioSemanalAutomatico() {
         const guild = client.guilds.cache.get(GUILD_ID);
         if (!guild) return;
 
-        // Procura um canal adequado para enviar o relatório (ex: canal de comandos ou texto geral)
         const channel = guild.channels.cache.get(MUSIC_COMMAND_CHANNEL_ID) || guild.systemChannel;
         if (!channel) return;
 
@@ -163,7 +162,6 @@ async function gerarRelatorioSemanalAutomatico() {
             return;
         }
 
-        // Agrupa os tempos por usuário
         const resumoUsuarios = {};
         for (const registro of weeklyReports) {
             if (!resumoUsuarios[registro.userId]) {
@@ -189,8 +187,6 @@ async function gerarRelatorioSemanalAutomatico() {
             .setTimestamp();
 
         await channel.send({ embeds: [embedRelatorio] });
-
-        // Limpa o relatório da semana após enviar
         weeklyReports.length = 0;
     } catch (error) {
         console.error('Erro ao gerar relatório semanal automático:', error);
@@ -452,11 +448,9 @@ client.on('interactionCreate', async interaction => {
             const endTime = Date.now();
             const duracaoMs = endTime - startTime;
 
-            // Salva no relatório semanal
             weeklyReports.push({ userId, startTime, endTime, duracaoMs });
             activePoints.delete(userId);
 
-            // Calcula horas, minutos e segundos
             const segundosTotal = Math.floor(duracaoMs / 1000);
             const horas = Math.floor(segundosTotal / 3600);
             const minutos = Math.floor((segundosTotal % 3600) / 60);
